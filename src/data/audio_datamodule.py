@@ -229,8 +229,17 @@ class AudioDataModule(LightningDataModule):
 
             if annot is not None:
                 annot = annot.strip()
-                timesteps, freqs = np.loadtxt(data_dir / annot, delimiter=',', dtype=np.float32).T
-                hop_duration = 1000 * (timesteps[1] - timesteps[0])
+                raw_data = np.loadtxt(data_dir / annot, delimiter=None, dtype=np.float32)
+                freqs = raw_data[:, 0]
+
+                min_len = min(len(out), len(freqs))
+                
+                out = out[:min_len]
+                freqs = freqs[:min_len]
+                
+                dt = self.hop_duration / 1000.0
+                timesteps = np.arange(len(freqs)) * dt
+                hop_duration = self.hop_duration
 
                 # Badly-aligned annotations is a fucking nightmare
                 # so we double-check for each file that hop sizes and lengths do match.
@@ -260,5 +269,8 @@ class AudioDataModule(LightningDataModule):
             self.hcqt_sr = sr
             hop_length = int(self.hop_duration * sr / 1000 + 0.5)
             self.hcqt_kernels = HarmonicCQT(sr=sr, hop_length=hop_length, **self.hcqt_kwargs)
-
+            if torch.cuda.is_available():
+                self.hcqt_kernels = self.hcqt_kernels.cuda()
+        if torch.cuda.is_available():
+            audio = audio.cuda()
         return self.hcqt_kernels(audio).squeeze(0).permute(2, 0, 1, 3)  # (time, harmonics, freq_bins, 2)
